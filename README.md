@@ -4,7 +4,7 @@ Aplicación de reconocimiento facial y detección de objecto en movimiento con u
 # Debes ejecutar en la carpeta donde se descargó o creaste
 python app.py
 
-#Librerías a instalar previamente
+# Librerías a instalar previamente
 * pip install customtkinter
 * pip install deepface
 * pip install ultralytics
