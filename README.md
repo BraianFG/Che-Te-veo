@@ -1,4 +1,4 @@
-# Che-Te-veo
+# Che, Te veo
 Aplicación de reconocimiento facial y detección de objecto en movimiento con utilización de librerías Python (Deepface y YOLO)
 
 # Debes ejecutar en la carpeta donde se descargó o creaste
