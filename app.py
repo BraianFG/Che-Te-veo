@@ -11,12 +11,12 @@ import threading
 import time
 import json
 from datetime import datetime, timedelta
-from collections import Counter, defaultdict, deque
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
+import numpy as np 
+import subprocess
 
-# Optimización RTSP
+# Optimización RTSP global
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|max_delay;500000"
 
 ctk.set_appearance_mode("dark")
@@ -37,6 +37,12 @@ class DeepFaceApp(ctk.CTk):
         self.img1_path = None
         self.img2_path = None
 
+        # Audio RTSP
+        self.audio_process = None
+        self.grabando_audio = False
+        self.ultimo_audio_guardado = 0.0
+        self.intervalo_audio = 10.0
+        
         # Variables de cámara
         self.cap = None
         self.camera_running = False
@@ -44,6 +50,10 @@ class DeepFaceApp(ctk.CTk):
         self.current_faces = []
         self.current_objects = []
         self.current_alturas = []
+
+        # Control de frames por hilo independiente
+        self.latest_raw_frame = None
+        self.frame_lock = threading.Lock()
 
         # Control de eventos
         self.ultimos_objetos = []
@@ -54,7 +64,7 @@ class DeepFaceApp(ctk.CTk):
         self.es_webcam = True
         self.zoom_factor = 1.0
 
-        # Filtros de detección (sensibilidad media-baja)
+        # Filtros de detección
         self.person_conf_min = 0.50
         self.person_aspect_min = 0.50
         self.person_min_height_px = 0.50
@@ -64,9 +74,9 @@ class DeepFaceApp(ctk.CTk):
         self.persistent_objects = []
         self.persistent_alturas = []
 
-        self.object_positions = {}          # track_id -> (cx, cy, frames_static)
-        self.static_threshold = 40      # frames quietos para considerarlo estático
-        self.movement_threshold =80        # píxeles mínimos de movimiento
+        self.object_positions = {}
+        self.static_threshold = 40
+        self.movement_threshold = 80
 
         self.current_frame_for_analysis = None
         self.analysis_lock = threading.Lock()
@@ -211,7 +221,6 @@ class DeepFaceApp(ctk.CTk):
         frame = ctk.CTkFrame(self.tab_stats)
         frame.pack(fill="both", expand=True, padx=8, pady=8)
 
-        # Barra superior de controles
         top = ctk.CTkFrame(frame, fg_color="transparent")
         top.pack(fill="x", pady=(0, 8))
 
@@ -224,11 +233,9 @@ class DeepFaceApp(ctk.CTk):
         )
         self.btn_actualizar_stats.pack(side="right", padx=6)
 
-        # Contenedor de métricas + gráficos
         content = ctk.CTkFrame(frame)
         content.pack(fill="both", expand=True)
 
-        # Columna izquierda: métricas numéricas
         left_stats = ctk.CTkScrollableFrame(content, width=340)
         left_stats.pack(side="left", fill="y", padx=(4, 6), pady=4)
 
@@ -271,14 +278,12 @@ class DeepFaceApp(ctk.CTk):
         self.lbl_anomalias = ctk.CTkLabel(left_stats, text="Ninguna por ahora", justify="left", wraplength=300)
         self.lbl_anomalias.pack(anchor="w", padx=8)
 
-        # Columna derecha: gráficos
         right_charts = ctk.CTkFrame(content)
         right_charts.pack(side="left", fill="both", expand=True, padx=4, pady=4)
 
         self.chart_frame = ctk.CTkFrame(right_charts)
         self.chart_frame.pack(fill="both", expand=True, padx=4, pady=4)
-
-        self.canvas_chart = None  # se crea al actualizar
+        self.canvas_chart = None
 
     def _construir_tab_historial(self):
         frame = ctk.CTkFrame(self.tab_historial)
@@ -301,7 +306,6 @@ class DeepFaceApp(ctk.CTk):
     # ESTADÍSTICAS Y PREDICCIÓN
     # ==================================================================
     def cargar_eventos(self, dias=7):
-        """Lee todos los eventos.jsonl de los últimos N días"""
         eventos = []
         hoy = datetime.now().date()
 
@@ -326,7 +330,6 @@ class DeepFaceApp(ctk.CTk):
         return eventos
 
     def actualizar_estadisticas(self):
-        """Calcula métricas, gráficos y predicción"""
         eventos = self.cargar_eventos(dias=7)
 
         if not eventos:
@@ -340,14 +343,11 @@ class DeepFaceApp(ctk.CTk):
             self.lbl_anomalias.configure(text="Ninguna")
             return
 
-        # --- Totales ---
         total_personas = 0
         total_vehiculos = 0
         total_animales = 0
         objetos_counter = Counter()
-        generos = Counter()
-        edades = []
-        por_hora = defaultdict(int)          # hora -> cantidad de eventos
+        por_hora = defaultdict(int)
         por_hora_personas = defaultdict(int)
 
         vehiculos_keys = {"auto", "moto", "camión", "colectivo", "bicicleta", "tren", "car", "motorcycle", "truck", "bus", "bicycle"}
@@ -365,9 +365,6 @@ class DeepFaceApp(ctk.CTk):
                 elif nombre in animales_keys:
                     total_animales += cant
 
-            # Género y edad (si existen en el evento - se pueden extender)
-            # Por ahora usamos solo lo disponible
-
             try:
                 dt = datetime.fromisoformat(ev.get("fecha_hora", ""))
                 hora = dt.hour
@@ -382,25 +379,17 @@ class DeepFaceApp(ctk.CTk):
         self.lbl_total_animales.configure(text=f"🐕 Animales: {total_animales}")
         self.lbl_total_eventos.configure(text=f"📋 Total eventos: {len(eventos)}")
 
-        # Género (placeholder - se puede mejorar guardando género en el JSON)
         self.lbl_genero.configure(text="Datos de género se irán acumulando\ncon más detecciones de rostros")
-
-        # Edad promedio (si hay datos)
         self.lbl_edad.configure(text="Se calculará cuando se guarden más análisis faciales")
 
-        # --- Predicción simple ---
         hora_actual = datetime.now().hour
         prediccion_texto = self._generar_prediccion(por_hora_personas, por_hora, hora_actual)
         self.lbl_prediccion.configure(text=prediccion_texto)
 
-        # --- Anomalías ---
         anomalias = self._detectar_anomalias(por_hora, hora_actual)
         self.lbl_anomalias.configure(text=anomalias if anomalias else "Ninguna anomalía detectada")
 
-        # --- Gráficos ---
         self._dibujar_graficos(por_hora, objetos_counter)
-
-        # Actualizar historial de texto
         self._actualizar_texto_historial(eventos)
 
         self.status.configure(text=f"Estadísticas actualizadas – {len(eventos)} eventos analizados")
@@ -409,12 +398,11 @@ class DeepFaceApp(ctk.CTk):
         if not por_hora:
             return "Datos insuficientes para predecir"
 
-        # Promedio de personas por esa hora en los últimos días
         horas_futuras = [(hora_actual + i) % 24 for i in range(1, 4)]
         lineas = ["Según el patrón de los últimos 7 días:\n"]
 
         for h in horas_futuras:
-            promedio = por_hora_personas.get(h, 0) / max(1, 7)  # promedio diario aproximado
+            promedio = por_hora_personas.get(h, 0) / max(1, 7)
             eventos_prom = por_hora.get(h, 0) / max(1, 7)
             if promedio > 0.3 or eventos_prom > 0.5:
                 lineas.append(f"• {h:02d}:00 → ~{promedio:.1f} personas / {eventos_prom:.1f} eventos")
@@ -440,14 +428,12 @@ class DeepFaceApp(ctk.CTk):
         return ""
 
     def _dibujar_graficos(self, por_hora, objetos_counter):
-        # Limpiar gráfico anterior
         for widget in self.chart_frame.winfo_children():
             widget.destroy()
 
         fig, axes = plt.subplots(1, 2, figsize=(9.5, 4.2), dpi=100)
         fig.patch.set_facecolor("#2b2b2b")
 
-        # Gráfico 1: Actividad por hora
         ax1 = axes[0]
         horas = list(range(24))
         valores = [por_hora.get(h, 0) for h in horas]
@@ -459,7 +445,6 @@ class DeepFaceApp(ctk.CTk):
         ax1.set_xticks(range(0, 24, 2))
         ax1.set_facecolor("#1e1e1e")
 
-        # Gráfico 2: Top objetos
         ax2 = axes[1]
         if objetos_counter:
             top = objetos_counter.most_common(8)
@@ -487,7 +472,6 @@ class DeepFaceApp(ctk.CTk):
             self.historial_texto.insert("1.0", "No hay eventos registrados todavía.\n")
             return
 
-        # Mostrar los más recientes primero
         eventos_ordenados = sorted(eventos, key=lambda e: e.get("fecha_hora", ""), reverse=True)[:80]
         for ev in eventos_ordenados:
             fecha = ev.get("fecha_hora", "")[:19].replace("T", " ")
@@ -500,7 +484,87 @@ class DeepFaceApp(ctk.CTk):
             self.historial_texto.insert("end", linea)
 
     # ==================================================================
-    # RESTO DE FUNCIONES (cámara, detección, etc.)
+    # MÉTODOS DE AUDIO RTSP
+    # ==================================================================
+    def iniciar_audio_rtsp(self, url):
+        self.detener_audio_rtsp()
+        try:
+            self.audio_process = subprocess.Popen(
+                [
+                    "ffplay",
+                    "-nodisp",
+                    "-autoexit",
+                    "-rtsp_transport", "tcp",
+                    "-probesize", "32",
+                    "-analyzeduration", "0",
+                    "-loglevel", "quiet",
+                    url
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(f"No se pudo iniciar audio RTSP: {e}")
+
+    def detener_audio_rtsp(self):
+        if self.audio_process:
+            try:
+                self.audio_process.terminate()
+                self.audio_process.wait(timeout=1)
+            except Exception:
+                try:
+                    self.audio_process.kill()
+                except Exception:
+                    pass
+            self.audio_process = None
+
+    def grabar_audio_persona(self, url, duracion=8):
+        ahora = time.time()
+        if ahora - self.ultimo_audio_guardado < self.intervalo_audio or self.grabando_audio:
+            return
+
+        self.grabando_audio = True
+        self.ultimo_audio_guardado = ahora
+
+        try:
+            ahora_dt = datetime.now()
+            carpeta = os.path.join(self.carpeta_registros, ahora_dt.strftime("%Y-%m-%d"))
+            os.makedirs(carpeta, exist_ok=True)
+
+            nombre = f"audio_{ahora_dt.strftime('%H-%M-%S')}.mp3"
+            ruta_audio = os.path.join(carpeta, nombre)
+
+            comando = [
+                "ffmpeg",
+                "-y",
+                "-rtsp_transport", "tcp",
+                "-fflags", "nobuffer",
+                "-flags", "low_delay",
+                "-i", url,
+                "-t", str(duracion),
+                "-vn",
+                "-acodec", "libmp3lame",
+                "-q:a", "4",
+                "-loglevel", "error",
+                ruta_audio
+            ]
+
+            def _grabar():
+                try:
+                    subprocess.run(comando, timeout=duracion + 5)
+                    self.after(0, lambda: self.status.configure(text=f"Audio guardado: {nombre}"))
+                except Exception as e:
+                    print(f"Error al grabar audio: {e}")
+                finally:
+                    self.grabando_audio = False
+
+            threading.Thread(target=_grabar, daemon=True).start()
+        except Exception as e:
+            print(f"Error preparando grabación de audio: {e}")
+            self.grabando_audio = False
+
+    # ==================================================================
+    # CÁMARA Y PROCESAMIENTO (CON HILO DE CAPTURA INDEPENDIENTE)
     # ==================================================================
     def cambiar_tipo_camara(self, choice):
         if "RTSP" in choice or "Seguridad" in choice:
@@ -582,6 +646,12 @@ class DeepFaceApp(ctk.CTk):
                         emocion = self.traducir_emocion(cara.get("dominant_emotion", "?"))
                         texto += f"      • P{i}: {edad}a | {genero} | {emocion}\n"
 
+                tipo = self.tipo_camara.get()
+                if "RTSP" in tipo or "Seguridad" in tipo:
+                    url = self.entry_rtsp.get().strip()
+                    if url:
+                        self.grabar_audio_persona(url, duracion=8)
+                            
             carpeta = os.path.join(self.carpeta_registros, ahora.strftime("%Y-%m-%d"))
             os.makedirs(carpeta, exist_ok=True)
             base = "evento_" + ahora.strftime("%H-%M-%S-%f")[:12]
@@ -589,10 +659,14 @@ class DeepFaceApp(ctk.CTk):
 
             if frame is not None:
                 try:
+                    # Dibujar la fecha y hora exacta en la esquina inferior de la foto guardada
+                    cv2.putText(frame, hora, (20, frame.shape[0] - 25), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
                     cv2.imwrite(foto, frame)
-                    texto += "   📷 Foto guardada\n"
-                except Exception:
-                    pass
+                    texto += "   📷 Foto guardada con recuadros y hora\n"
+                except Exception as e:
+                    print(f"Error al guardar foto: {e}") 
 
             datos = {
                 "fecha_hora": ahora.isoformat(timespec="seconds"),
@@ -601,7 +675,6 @@ class DeepFaceApp(ctk.CTk):
                 "personas_detectadas": total_personas,
                 "alturas_cm": [self.estimar_altura(px) for px in alturas_personas_px],
             }
-            # Guardar género y edad si hay caras (mejora las estadísticas)
             if faces:
                 datos["generos"] = [self.traducir_genero(c.get("dominant_gender", "?")) for c in faces]
                 datos["edades"] = []
@@ -641,121 +714,54 @@ class DeepFaceApp(ctk.CTk):
         self.ultimos_objetos = []
 
     def cargar_img1(self):
-            path = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.bmp")])
-            if path:
-                self.img1_path = path
-                self.btn_img1.configure(text=f"✅ {os.path.basename(path)[:18]}")
+        path = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.bmp")])
+        if path:
+            self.img1_path = path
+            self.btn_img1.configure(text=f"✅ {os.path.basename(path)[:18]}")
 
     def cargar_img2(self):
-            path = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.bmp")])
-            if path:
-                self.img2_path = path
-                self.btn_img2.configure(text=f"✅ {os.path.basename(path)[:18]}")
+        path = filedialog.askopenfilename(filetypes=[("Imágenes", "*.jpg *.jpeg *.png *.bmp")])
+        if path:
+            self.img2_path = path
+            self.btn_img2.configure(text=f"✅ {os.path.basename(path)[:18]}")
 
     def iniciar_verificacion(self):
-            if not self.img1_path or not self.img2_path:
-                messagebox.showwarning("Faltan imágenes", "Carga las dos imágenes.")
-                return
-            threading.Thread(target=self.verificar, daemon=True).start()
+        if not self.img1_path or not self.img2_path:
+            messagebox.showwarning("Faltan imágenes", "Carga las dos imágenes.")
+            return
+        threading.Thread(target=self.verificar, daemon=True).start()
 
     def verificar(self):
-            try:
-                res = DeepFace.verify(self.img1_path, self.img2_path, model_name=self.modelo.get(), enforce_detection=False)
-                texto = f"[{datetime.now().strftime('%H:%M:%S')}] VERIFICACIÓN: {'✅ Misma persona' if res['verified'] else '❌ Diferentes'}\n"
-                self.after(0, lambda: self.resultado.insert("1.0", texto + "-" * 40 + "\n"))
-            except Exception as e:
-                self.after(0, lambda: self.resultado.insert("1.0", f"Error: {e}\n"))
+        try:
+            res = DeepFace.verify(self.img1_path, self.img2_path, model_name=self.modelo.get(), enforce_detection=False)
+            texto = f"[{datetime.now().strftime('%H:%M:%S')}] VERIFICACIÓN: {'✅ Misma persona' if res['verified'] else '❌ Diferentes'}\n"
+            self.after(0, lambda: self.resultado.insert("1.0", texto + "-" * 40 + "\n"))
+        except Exception as e:
+            self.after(0, lambda: self.resultado.insert("1.0", f"Error: {e}\n"))
 
     def traducir_objeto(self, nombre):
-            mapa = {
-    # Personas y movilidad
-    "person": "persona",
-    "bicycle": "bicicleta",
-    "car": "auto",
-    "motorcycle": "moto",
-    "bus": "colectivo",
-    "truck": "camión",
-    "train": "tren",
-
-    # Señalética e infraestructura
-    "traffic light": "semáforo",
-    "stop sign": "señal de pare",
-    "fire hydrant": "hidrante",
-    "parking meter": "parquímetro",
-    "bench": "banco",
-
-    # Animales
-    "dog": "perro",
-    "cat": "gato",
-    "bird": "pájaro",
-
-    # Elementos personales
-    "backpack": "mochila",
-    "handbag": "cartera",
-    "umbrella": "paraguas",
-    "suitcase": "valija",
-    "bottle": "botella",
-    "cell phone": "celular",
-    "laptop": "notebook",
-    "book": "libro",
-    "cup": "vaso",
-    "sports ball": "pelota",
-    "skateboard": "skate",
-
-    # Extra argentinos / calle
-    "mate": "mate",
-    "termo": "termo",
-    "headphones": "auriculares",
-    "sunglasses": "lentes de sol",
-    "wallet": "billetera",
-    "keys": "llaves",
-    "cigarette": "cigarrillo",
-    "cap": "gorra",
-    "watch": "reloj",
-    "potted plant": "planta en maceta",
-
-    # Casa / muebles
-    "chair": "silla",
-    "couch": "sillón",
-    "bed": "cama",
-    "dining table": "mesa",
-    "toilet": "inodoro",
-    "tv": "televisor",
-    "laptop": "notebook",
-    "mouse": "mouse",
-    "remote": "control remoto",
-    "keyboard": "teclado",
-    "microwave": "microondas",
-    "oven": "horno",
-    "toaster": "tostadora",
-    "sink": "bachera",
-    "refrigerator": "heladera",
-    "clock": "reloj",
-    "vase": "florero",
-    "scissors": "tijeras",
-    "teddy bear": "peluche",
-    "hair drier": "secador de pelo",
-    "toothbrush": "cepillo de dientes",
-
-    # Cocina / comida
-    "wine glass": "copa",
-    "fork": "tenedor",
-    "knife": "cuchillo",
-    "spoon": "cuchara",
-    "bowl": "bowl",
-    "banana": "banana",
-    "apple": "manzana",
-    "sandwich": "sándwich",
-    "orange": "naranja",
-    "broccoli": "brócoli",
-    "carrot": "zanahoria",
-    "hot dog": "pancho",
-    "pizza": "pizza",
-    "donut": "dona",
-    "cake": "torta",
-    "banana": "banana",
-}
-            return mapa.get(str(nombre).strip().lower().replace("_", " "), str(nombre).lower())
+        mapa = {
+            "person": "persona", "bicycle": "bicicleta", "car": "auto", "motorcycle": "moto",
+            "bus": "colectivo", "truck": "camión", "train": "tren", "traffic light": "semáforo",
+            "stop sign": "señal de pare", "fire hydrant": "hidrante", "parking meter": "parquímetro",
+            "bench": "banco", "dog": "perro", "cat": "gato", "bird": "pájaro", "backpack": "mochila",
+            "handbag": "cartera", "umbrella": "paraguas", "suitcase": "valija", "bottle": "botella",
+            "cell phone": "celular", "laptop": "notebook", "book": "libro", "cup": "vaso",
+            "sports ball": "pelota", "skateboard": "skate", "mate": "mate", "termo": "termo",
+            "headphones": "auriculares", "sunglasses": "lentes de sol", "wallet": "billetera",
+            "keys": "llaves", "cigarette": "cigarrillo", "cap": "gorra", "watch": "reloj",
+            "potted plant": "planta en maceta", "chair": "silla", "couch": "sillón", "bed": "cama",
+            "dining table": "mesa", "toilet": "inodoro", "tv": "televisor", "mouse": "mouse",
+            "remote": "control remoto", "keyboard": "teclado", "microwave": "microondas",
+            "oven": "horno", "toaster": "tostadora", "sink": "bachera", "refrigerator": "heladera",
+            "clock": "reloj", "vase": "florero", "scissors": "tijeras", "teddy bear": "peluche",
+            "hair drier": "secador de pelo", "toothbrush": "cepillo de dientes", "wine glass": "copa",
+            "fork": "tenedor", "knife": "cuchillo", "spoon": "cuchara", "bowl": "bowl",
+            "banana": "banana", "apple": "manzana", "sandwich": "sándwich", "orange": "naranja",
+            "broccoli": "brócoli", "carrot": "zanahoria", "hot dog": "pancho", "pizza": "pizza",
+            "donut": "dona", "cake": "torta"
+        }
+        return mapa.get(str(nombre).strip().lower().replace("_", " "), str(nombre).lower())
 
     def traducir_genero(self, valor):
         if isinstance(valor, dict):
@@ -856,6 +862,7 @@ class DeepFaceApp(ctk.CTk):
                 messagebox.showwarning("URL vacía", "Escribe la URL RTSP.")
                 return
             fuente = url
+            self.iniciar_audio_rtsp(url)
         else:
             fuente = 0
 
@@ -881,17 +888,35 @@ class DeepFaceApp(ctk.CTk):
         self.btn_camara.configure(text="⏹️ Detener Cámara", fg_color="#c0392b")
         self.status.configure(text="Cámara activa")
 
+        # Hilos independientes para lectura fluida y análisis separado
+        threading.Thread(target=self._hilo_captura_rtsp, daemon=True).start()
         threading.Thread(target=self.actualizar_camara, daemon=True).start()
         threading.Thread(target=self._hilo_analisis_deepface_seguro, daemon=True).start()
 
     def detener_camara(self):
         self.camera_running = False
+        self.detener_audio_rtsp()
+
         if self.cap:
             self.cap.release()
             self.cap = None
         self.btn_camara.configure(text="▶️ Iniciar Cámara", fg_color="#e67e22")
         self.camera_label.configure(image=None, text="Cámara apagada")
         self.status.configure(text="Cámara detenida")
+
+    def _hilo_captura_rtsp(self):
+        """Hilo dedicado exclusivamente a capturar el frame más fresco de la red sin bloquear la UI ni YOLO"""
+        while self.camera_running and self.cap and self.cap.isOpened():
+            try:
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    time.sleep(0.005)
+                    continue
+
+                with self.frame_lock:
+                    self.latest_raw_frame = frame
+            except Exception:
+                time.sleep(0.01)
 
     def _hilo_analisis_deepface_seguro(self):
         while self.camera_running:
@@ -906,7 +931,7 @@ class DeepFaceApp(ctk.CTk):
                 if not alturas:
                     with self.analysis_lock:
                         self.current_faces = []
-                    time.sleep(0.8)  # Aumentar ligeramente el reposo si no hay caras
+                    time.sleep(0.8)
                     continue
 
                 rgb = cv2.cvtColor(frame_copia, cv2.COLOR_BGR2RGB)
@@ -929,34 +954,30 @@ class DeepFaceApp(ctk.CTk):
             time.sleep(1.1)
             
     def actualizar_camara(self):
-        while self.camera_running and self.cap and self.cap.isOpened():
+        """Bucle principal de procesamiento visual optimizado con el frame más reciente"""
+        while self.camera_running:
             try:
-                # Limpiar búfer de la cámara para evitar acumular frames viejos
-                for _ in range(2):
-                    self.cap.grab()
-
-                ret, frame = self.cap.read()
-                if not ret or frame is None:
-                    time.sleep(0.01)
-                    continue
+                with self.frame_lock:
+                    if self.latest_raw_frame is None:
+                        time.sleep(0.01)
+                        continue
+                    frame = self.latest_raw_frame.copy()
 
                 self.frame_count += 1
                 if self.es_webcam:
                     frame = cv2.flip(frame, 1)
                 frame = self.aplicar_zoom(frame)
 
-                # Guardar frame para el hilo de DeepFace
                 with self.analysis_lock:
                     self.current_frame_for_analysis = frame.copy()
 
-                # ---------- YOLO Optimizado para Cero Delay ----------
                 objetos_detectados = []
                 alturas_personas_px = []
                 boxes_to_draw = []
 
                 if self.yolo_model is not None:
                     try:
-                        # Ejecutamos cada 4 frames y con imgsz=320 para eliminar por completo el delay
+                        # Ejecutar YOLO cada 4 frames optimizado
                         if self.frame_count % 4 == 0:
                             results = self.yolo_model.track(
                                 frame, persist=True, verbose=False, conf=0.45, imgsz=320
@@ -981,7 +1002,6 @@ class DeepFaceApp(ctk.CTk):
                                 w_box = max(1, x2 - x1)
                                 aspect = h_box / float(w_box)
 
-                                # PERSONAS
                                 if nombre == "person":
                                     if (conf >= self.person_conf_min and
                                         aspect >= self.person_aspect_min and
@@ -989,7 +1009,6 @@ class DeepFaceApp(ctk.CTk):
                                         alturas_personas_px.append(h_box)
                                         boxes_to_draw.append(("person", x1, y1, x2, y2, "Persona"))
                                 else:
-                                    # OTROS OBJETOS ESTÁTICOS
                                     if conf >= 0.40:
                                         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
                                         match_encontrado = None
@@ -1024,13 +1043,11 @@ class DeepFaceApp(ctk.CTk):
                     except Exception as e:
                         print(f"Error YOLO Tracking: {e}")
 
-                # Actualizar estado compartido
                 with self.analysis_lock:
                     self.current_alturas = list(alturas_personas_px)
                     self.current_objects = list(objetos_detectados)
                     faces_actuales = list(self.current_faces)
 
-                # ---------- Dibujar cajas ----------
                 display = frame.copy()
                 for item in boxes_to_draw:
                     nombre, x1, y1, x2, y2, etiqueta = item
@@ -1093,6 +1110,7 @@ class DeepFaceApp(ctk.CTk):
 
     def on_closing(self):
         self.camera_running = False
+        self.detener_audio_rtsp()
         if self.cap:
             self.cap.release()
         self.destroy()
