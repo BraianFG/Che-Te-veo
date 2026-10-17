@@ -13,5 +13,5 @@ python app.py
 * pip install matplotlib 
 * pip install numpy
 
-#Sonido 
+# Sonido 
 * Para esto se utiliza FFMEG , se debe descargar https://ffmpeg.org/download.html siguiendo las instrucciones del sitio web
