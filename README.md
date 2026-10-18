@@ -12,6 +12,7 @@ python app.py
 * pip install Pillow
 * pip install matplotlib 
 * pip install numpy
-
+* pip install onvif-zeep
+  
 # Sonido 
 * Para esto se utiliza FFMEG , se debe descargar https://ffmpeg.org/download.html siguiendo las instrucciones del sitio web
