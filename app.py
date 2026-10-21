@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np 
 import subprocess
+import sys
 
 try:
     from onvif import ONVIFCamera
@@ -28,6 +29,15 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 plt.style.use("dark_background")
+
+
+def obtener_ruta_recurso(relativo):
+    """Obtiene la ruta absoluta del recurso, compatible con desarrollo y con PyInstaller"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relativo)
 
 
 class DeepFaceApp(ctk.CTk):
@@ -88,12 +98,14 @@ class DeepFaceApp(ctk.CTk):
         self.carpeta_registros = os.path.join(os.path.dirname(os.path.abspath(__file__)), "registros")
         os.makedirs(self.carpeta_registros, exist_ok=True)
 
-        # Modelo YOLO
+        # Modelo YOLO automatizado para desarrollo y ejecutable (.exe)
         try:
-            self.yolo_model = YOLO("yolov8n.pt")
+            ruta_modelo = obtener_ruta_recurso("yolov8n.pt")
+            self.yolo_model = YOLO(ruta_modelo)
         except Exception:
             try:
-                self.yolo_model = YOLO("yolov8s.pt")
+                ruta_modelo_s = obtener_ruta_recurso("yolov8s.pt")
+                self.yolo_model = YOLO(ruta_modelo_s)
             except Exception as e2:
                 messagebox.showerror("Error", f"No se pudo cargar YOLO:\n{e2}")
                 self.yolo_model = None
