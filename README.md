@@ -16,3 +16,9 @@ python app.py
   
 # Sonido 
 * Para esto se utiliza FFMEG , se debe descargar https://ffmpeg.org/download.html siguiendo las instrucciones del sitio web
+
+# Convertir a un archivo .exe
+Hay que instalar Pyinstaller
+
+* pip install pyisntaller
+* python -m PyInstaller --clean --noconsole --onedir --add-data "yolov8n.pt;." --collect-all gdown --collect-all deepface --name="CheTeVeo" app.py
