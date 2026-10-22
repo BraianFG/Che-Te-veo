@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Che, Te Veo — Videovigilancia inteligente</title>
+  <meta name="description" content="Che, Te Veo: sistema de videovigilancia inteligente con detección de personas y objetos en tiempo real (YOLO + DeepFace)." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --bg-card: #1a1d24;
+      --bg-card-hover: #22262f;
+      --border: #2a2f3a;
+      --text: #f0f2f5;
+      --text-muted: #9aa3b2;
+      --accent: #3b82f6;
+      --accent-soft: #2563eb;
+      --green: #22c55e;
+      --radius: 14px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .nav {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    .nav-links { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover {
+      background: var(--accent-soft);
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-ghost:hover { background: var(--bg-card); border-color: #3a4150; }
+
+    .btn-download { background: var(--green); color: #04140a; }
+    .btn-download:hover {
+      background: #16a34a;
+      box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
+    }
+
+    .hero {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #93c5fd;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 3.6rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(90deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto 32px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+
+    .section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 72px;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .section-sub {
+      text-align: center;
+      color: var(--text-muted);
+      margin-bottom: 36px;
+      font-size: 1rem;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .feature-card:hover {
+      background: var(--bg-card-hover);
+      border-color: #3a4150;
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin-bottom: 14px;
+    }
+
+    .feature-icon.blue { background: rgba(59, 130, 246, 0.15); }
+    .feature-icon.green { background: rgba(34, 197, 94, 0.15); }
+    .feature-icon.orange { background: rgba(245, 158, 11, 0.15); }
+    .feature-icon.purple { background: rgba(168, 85, 247, 0.15); }
+
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 650;
+      margin-bottom: 6px;
+    }
+
+    .feature-card p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    .tech-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .tech-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 999px;
+    }
+
+    .cta {
+      max-width: 800px;
+      margin: 0 auto 80px;
+      padding: 40px 28px;
+      background: linear-gradient(145deg, #1a1d24 0%, #151820 100%);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      text-align: center;
+    }
+
+    .cta h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .cta p {
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      font-size: 1rem;
+    }
+
+    .cta-actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 28px 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    footer a { color: #93c5fd; font-weight: 500; }
+    footer a:hover { text-decoration: underline; }
+
+    @media (max-width: 560px) {
+      .hero { padding-top: 28px; }
+      .nav { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="logo">
+      <div class="logo-icon">🎭</div>
+      Che, Te Veo
+    </div>
+    <div class="nav-links">
+      <a class="btn btn-ghost" href="https://github.com/BraianFG/Che-Te-veo" target="_blank" rel="noopener">
+        GitHub
+      </a>
+      <a class="btn btn-download" href="https://github.com/BraianFG/Che-Te-veo/raw/main/CheTeVeo.exe" target="_blank" rel="noopener">
+        Descargar
+      </a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="badge">Videovigilancia inteligente · Windows</div>
+    <h1>Che, <span>Te Veo</span></h1>
+    <p class="hero-sub">
+      Sistema de detección de personas y objetos en tiempo real.
+      Cámara local o RTSP, estadísticas, predicción de actividad y registro automático de eventos.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-download" href="https://github.com/BraianFG/Che-Te-veo/raw/main/CheTeVeo.exe" target="_blank" rel="noopener">
+        Descargar CheTeVeo.exe
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/BraianFG/Che-Te-veo" target="_blank" rel="noopener">
+        Ver código en GitHub
+      </a>
+    </div>
+  </header>
+
+  <section class="section">
+    <h2 class="section-title">Qué hace</h2>
+    <p class="section-sub">Detección, registro y análisis en un solo programa</p>
+
+    <div class="features">
+      <article class="feature-card">
+        <div class="feature-icon blue">👤</div>
+        <h3>Detección en vivo</h3>
+        <p>Personas, vehículos y objetos con recuadros y nivel de confianza en tiempo real.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon green">📹</div>
+        <h3>Webcam y RTSP</h3>
+        <p>Funciona con cámara local o cámaras de seguridad por stream RTSP.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon orange">📊</div>
+        <h3>Estadísticas</h3>
+        <p>Actividad por hora, objetos más detectados, predicción y anomalías.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon purple">🗂️</div>
+        <h3>Registro automático</h3>
+        <p>Guarda fotos con recuadros, eventos y opcionalmente audio desde RTSP.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title">Tecnologías</h2>
+    <p class="section-sub">Apiladas para detección y análisis en escritorio</p>
+    <div class="tech-row">
+      <span class="tech-pill">Python</span>
+      <span class="tech-pill">YOLO</span>
+      <span class="tech-pill">DeepFace</span>
+      <span class="tech-pill">OpenCV</span>
+      <span class="tech-pill">CustomTkinter</span>
+      <span class="tech-pill">Matplotlib</span>
+      <span class="tech-pill">FFmpeg</span>
+    </div>
+  </section>
+
+  <section class="cta">
+    <h2>Probá Che, Te Veo</h2>
+    <p>Descargá el ejecutable para Windows o mirá el código en GitHub.</p>
+    <div class="cta-actions">
+      <a class="btn btn-download" href="https://github.com/BraianFG/Che-Te-veo/raw/main/CheTeVeo.exe" target="_blank" rel="noopener">
+        Descargar CheTeVeo.exe
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/BraianFG/Che-Te-veo" target="_blank" rel="noopener">
+        Repositorio en GitHub
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Proyecto open source ·
+    <a href="https://github.com/BraianFG/Che-Te-veo" target="_blank" rel="noopener">github.com/BraianFG/Che-Te-veo</a>
+  </footer>
+</body>
+</html>
