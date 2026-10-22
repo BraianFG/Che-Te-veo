@@ -4,6 +4,9 @@ Aplicación de reconocimiento facial y detección de objecto en movimiento con u
 # Debes ejecutar en la carpeta donde se descargó o creaste
 python app.py
 
+#Requierimiento
+* Tener Python instalado
+  
 # Librerías a instalar previamente
 * pip install customtkinter
 * pip install deepface
@@ -21,4 +24,20 @@ python app.py
 Hay que instalar Pyinstaller
 
 * pip install pyisntaller
-* python -m PyInstaller --clean --noconsole --onedir --add-data "yolov8n.pt;." --collect-all gdown --collect-all deepface --name="CheTeVeo" app.py
+* Descargar el archivo de YOLO python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+* python -m PyInstaller --noconfirm --clean --onefile --windowed --name CheTeVeo ^
+  --add-data "yolov8n.pt;." ^
+  --collect-all ultralytics ^
+  --collect-all deepface ^
+  --collect-all customtkinter ^
+  --collect-all cv2 ^
+  --collect-all gdown ^
+  --copy-metadata gdown ^
+  --copy-metadata deepface ^
+  --copy-metadata retina-face ^
+  --copy-metadata ultralytics ^
+  --hidden-import gdown ^
+  --hidden-import deepface ^
+  app.py
+
+ *Convertír a *.exe con sus librerías
