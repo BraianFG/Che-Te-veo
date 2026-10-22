@@ -40,4 +40,4 @@ Hay que instalar Pyinstaller
   --hidden-import deepface ^
   app.py
 
- *Convertír a *.exe con sus librerías
+ * (Convertír a *.exe con sus librerías)
