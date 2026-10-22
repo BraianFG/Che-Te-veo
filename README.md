@@ -4,7 +4,7 @@ Aplicación de reconocimiento facial y detección de objecto en movimiento con u
 # Debes ejecutar en la carpeta donde se descargó o creaste
 python app.py
 
-#Requierimiento
+# Requierimiento
 * Tener Python instalado
   
 # Librerías a instalar previamente
